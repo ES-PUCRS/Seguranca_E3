@@ -181,8 +181,8 @@ public class DiffieHellman {
      * @see BigInteger
      */
     private static BigInteger convertFileValue(String key, int system) throws IOException {
-        String bi = FileManager.getFileValue(key).replaceAll("\s", "");
-        return (bi == null) ? null : new BigInteger(bi, system);
+        String bi = FileManager.getFileValue(key);
+        return (bi == null) ? null : new BigInteger(bi.replaceAll("\s", ""), system);
     }
 
     /**
