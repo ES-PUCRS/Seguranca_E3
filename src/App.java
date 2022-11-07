@@ -38,9 +38,18 @@ public class App {
         if (exist("m"))
             AES.backwards();
 
-        AES.encrypt();
+        if (exist("K") && exist("ml"))
+            AES.encrypt();
     }
 
+    /**
+     * Returns true if the key parameter exists in the DiffieHellman map.
+     * This method is used to keep main cleaner
+     * 
+     * @param key value to be searched at the file
+     * @return true if the key exists into the keys file.
+     * @throws IOException from the FileManager reader
+     */
     private static boolean exist(String key) throws IOException {
         return DiffieHellman.get(key) != null;
     }
