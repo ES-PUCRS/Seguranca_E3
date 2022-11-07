@@ -47,4 +47,17 @@ public class BigRandom {
 
         return res;
     }
+
+    /**
+     * Returns a random value with 4096 bit length long
+     * 
+     * @return BigInteger: a random BigInteger with 4096 bit length long
+     * 
+     * @see BigInteger
+     * @see Random
+     */
+    public static BigInteger get4096BitLength() {
+        BigInteger res = new BigInteger(4096, rand);
+        return res;
+    }
 }

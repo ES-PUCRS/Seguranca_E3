@@ -1,20 +1,13 @@
-import java.util.LinkedHashMap;
-
 import javax.xml.crypto.NoSuchMechanismException;
-
-import java.math.BigInteger;
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.io.IOException;
 import java.io.UnsupportedEncodingException;
+import java.security.MessageDigest;
+import java.util.LinkedHashMap;
+import java.math.BigInteger;
+import java.io.IOException;
+import java.util.Arrays;
 
 public class DiffieHellman {
-
-    /**
-     * Size of bits desired to be sliced from the hash that will become the AES Key
-     */
-    private static final int kSize = 128;
 
     /**
      * An instance Map that will be used to futher record all those values on the
@@ -124,10 +117,10 @@ public class DiffieHellman {
      * @throws IOException
      */
     public static void exchangeCipherKey() throws NoSuchAlgorithmException, IOException {
+        String c = get("c").replaceAll("\s", "");
         BigInteger B, a, p;
 
         B = convertFileValue("B_HEX", 16);
-        B = new BigInteger(B.toString(10));
         a = convertFileValue("a");
         p = convertFileValue("p");
 
@@ -135,11 +128,18 @@ public class DiffieHellman {
             throw new IllegalStateException("Missing key");
 
         BigInteger V = B.modPow(a, p);
-        String K = hash(V.toString());
+
+        byte[] K = V.toByteArray();
+        byte[] KHash = hash(K);
+        K = Arrays.copyOfRange(KHash, 0, App.byteSize);
+
         record(
                 new String[] { "V", V.toString() },
-                new String[] { "K", K },
-                new String[] { "B", B.toString() });
+                new String[] { "V_HEX", V.toString(16) },
+                new String[] { "K", Utils.encodeHexString(K) },
+                new String[] { "B", B.toString() },
+                new String[] { "c_PADDED", c.substring(App.byteSize * 2) },
+                new String[] { "IV", c.substring(0, App.byteSize * 2) });
     }
 
     /**
@@ -153,23 +153,9 @@ public class DiffieHellman {
      * 
      * @see MessageDigest
      */
-    private static String hash(String V) throws NoSuchAlgorithmException, UnsupportedEncodingException {
-        return sliceK(
-                MessageDigest.getInstance("SHA-256")
-                        .digest(
-                                V.getBytes("UTF-8")));
-    }
-
-    /**
-     * Returns only the first 128 bits of the V hashed String
-     * 
-     * @param VHash The V byte array
-     * @return A String with the first 128 bits of the V hash
-     */
-    private static String sliceK(byte[] VHash) {
-        byte[] k = new byte[kSize];
-        System.arraycopy(VHash, 0, k, 0, kSize);
-        return new String(k, StandardCharsets.UTF_8);
+    private static byte[] hash(byte[] V) throws NoSuchAlgorithmException, UnsupportedEncodingException {
+        return MessageDigest.getInstance("SHA-256")
+                .digest(V);
     }
 
     /**
@@ -195,7 +181,7 @@ public class DiffieHellman {
      * @see BigInteger
      */
     private static BigInteger convertFileValue(String key, int system) throws IOException {
-        String bi = FileManager.getFileValue(key);
+        String bi = FileManager.getFileValue(key).replaceAll("\s", "");
         return (bi == null) ? null : new BigInteger(bi, system);
     }
 
@@ -230,12 +216,14 @@ public class DiffieHellman {
      * Retuns the key generated and stored at this class to be able to cipher and
      * decipher messages on the another class
      * 
+     * @throws IOException from FileManager, file could not exist
+     * 
      * @see LinkedHashMap
      */
-    public static String get(String value) {
+    public static String get(String value) throws IOException {
         if (instance == null)
             return null;
 
-        return instance.keys.get(value);
+        return FileManager.getFileValue(value);
     }
 }

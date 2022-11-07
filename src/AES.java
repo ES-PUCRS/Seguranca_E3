@@ -7,8 +7,10 @@ import javax.crypto.spec.IvParameterSpec;
 import java.nio.charset.StandardCharsets;
 import javax.crypto.BadPaddingException;
 import javax.crypto.spec.SecretKeySpec;
+import java.math.BigInteger;
+import java.io.IOException;
 import javax.crypto.Cipher;
-import java.util.Base64;
+import java.util.Arrays;
 
 public class AES {
 
@@ -27,19 +29,31 @@ public class AES {
      * @see Cipher
      */
     public static void encrypt() throws Exception {
+        String mlString, kString;
+        mlString = DiffieHellman.get("ml");
+        kString = DiffieHellman.get("K").replaceAll("\s", "");
 
-        SecretKeySpec K = new SecretKeySpec(DiffieHellman.get("K").getBytes(), "AES");
-        IvParameterSpec IV = new IvParameterSpec(DiffieHellman.get("IV").getBytes());
-        String m = DiffieHellman.get("ml");
+        byte[] ml = mlString.getBytes();
+        byte[] K = Utils.hexStringToByteArray(kString);
+
+        BigInteger randomIV = BigRandom.get4096BitLength();
+        byte[] IV = new byte[App.byteSize];
+        IV = Arrays.copyOfRange(randomIV.toByteArray(), 0, App.byteSize);
 
         Cipher cipher = Cipher.getInstance("AES/CBC/PKCS5Padding");
-        cipher.init(Cipher.ENCRYPT_MODE, K, IV);
-        byte[] cipherText = cipher.doFinal(m.getBytes());
+        cipher.init(
+                Cipher.ENCRYPT_MODE,
+                new SecretKeySpec(K, "AES"),
+                new IvParameterSpec(IV));
 
-        DiffieHellman.record(new String[] { "cl",
-                Base64.getEncoder()
-                        .encodeToString(cipherText)
-        });
+        byte[] cipherText = cipher.doFinal(ml);
+
+        String IVl = Utils.encodeHexString(IV);
+        String cl = Utils.encodeHexString(cipherText);
+        DiffieHellman.record(
+                new String[] { "IVl", IVl },
+                new String[] { "cl_PADDED", cl },
+                new String[] { "cl", IVl + cl });
     }
 
     /**
@@ -57,28 +71,43 @@ public class AES {
      * @see Cipher
      */
     public static void decrypt() throws Exception {
+        String cString, kString, ivString;
+        cString = DiffieHellman.get("c_PADDED").replaceAll("\s", "");
+        kString = DiffieHellman.get("K").replaceAll("\s", "");
+        ivString = DiffieHellman.get("IV").replaceAll("\s", "");
 
-        SecretKeySpec K = new SecretKeySpec(DiffieHellman.get("K").getBytes(), "AES");
-        IvParameterSpec IV = new IvParameterSpec(DiffieHellman.get("IV").getBytes());
-        String c = DiffieHellman.get("c");
+        byte[] c = Utils.hexStringToByteArray(cString);
+        byte[] K = Utils.hexStringToByteArray(kString);
+        byte[] IV = Utils.hexStringToByteArray(ivString);
 
         Cipher cipher = Cipher.getInstance("AES/CBC/PKCS5Padding");
-        cipher.init(Cipher.DECRYPT_MODE, K, IV);
-        byte[] plainText = cipher.doFinal(Base64.getDecoder()
-                .decode(c));
+        cipher.init(
+                Cipher.DECRYPT_MODE,
+                new SecretKeySpec(K, "AES"),
+                new IvParameterSpec(IV));
 
-        DiffieHellman.record(new String[] { "m", new String(plainText, StandardCharsets.UTF_8) });
+        byte[] plainText = null;
+        try {
+            plainText = cipher.doFinal(c);
+
+            DiffieHellman.record(
+                    new String[] { "m", new String(plainText, StandardCharsets.UTF_8) });
+        } catch (Exception e) {
+            System.out.println(e.getLocalizedMessage());
+        }
     }
 
     /**
      * Records the message line (m') to be sent back to the connection, this method
      * simply rewrite the message backwards
      * 
+     * @throws IOException from FileManager, the file could not exist.
+     * 
      * @see FileManager
      */
-    public static void backwards() {
+    public static void backwards() throws IOException {
         String m = DiffieHellman.get("m");
-        String ml = m + "";
+        String ml = "";
 
         for (char letter : m.toCharArray()) {
             ml = letter + ml;
