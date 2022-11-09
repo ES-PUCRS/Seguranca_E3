@@ -95,9 +95,8 @@ public class DiffieHellman {
         A = convertFileValue("A", 10);
         a = convertFileValue("a", 10);
 
-        while (a == null || !a.gcd(instance.p).equals(BigInteger.ONE)) {
+        if (A == null)
             a = BigRandom.get();
-        }
 
         if (A == null)
             A = instance.g.modPow(a, instance.p);
