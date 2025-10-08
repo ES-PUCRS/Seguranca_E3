@@ -1,118 +1,106 @@
-import java.security.InvalidAlgorithmParameterException;
-import java.security.NoSuchAlgorithmException;
+import javax.crypto.Cipher;
+import javax.crypto.BadPaddingException;
 import javax.crypto.IllegalBlockSizeException;
 import javax.crypto.NoSuchPaddingException;
-import java.security.InvalidKeyException;
 import javax.crypto.spec.IvParameterSpec;
-import java.nio.charset.StandardCharsets;
-import javax.crypto.BadPaddingException;
 import javax.crypto.spec.SecretKeySpec;
-import java.math.BigInteger;
-import java.io.IOException;
-import javax.crypto.Cipher;
-import java.util.Arrays;
+import java.nio.charset.StandardCharsets;
+import java.security.*;
+import java.util.Objects;
+import java.util.regex.Pattern;
 
-public class AES {
+public final class AES {
 
-    /**
-     * Encrypt the message line (m') that will be sent to the other person using
-     * cipher AES CBC
-     * 
-     * @throws NoSuchPaddingException
-     * @throws NoSuchAlgorithmException
-     * @throws InvalidAlgorithmParameterException
-     * @throws InvalidKeyException
-     * @throws BadPaddingException
-     * @throws IllegalBlockSizeException
-     * 
-     * @see FileManager
-     * @see Cipher
-     */
-    public static void encrypt() throws Exception {
-        String mlString, kString;
-        mlString = DiffieHellman.get("ml");
-        kString = DiffieHellman.get("K").replaceAll("\s", "");
+    private static final String CIPHER = "AES/CBC/PKCS5Padding";
+    private static final int BLOCK_SIZE = 16; // 128 bits
+    private static final Pattern WS = Pattern.compile("\\s+");
 
-        byte[] ml = mlString.getBytes();
-        byte[] K = Utils.hexStringToByteArray(kString);
+    private AES() {}
 
-        BigInteger randomIV = BigRandom.get4096BitLength();
-        byte[] IV = new byte[App.byteSize];
-        IV = Arrays.copyOfRange(randomIV.toByteArray(), 0, App.byteSize);
+    /* ========================= PUBLIC API ========================= */
 
-        Cipher cipher = Cipher.getInstance("AES/CBC/PKCS5Padding");
-        cipher.init(
-                Cipher.ENCRYPT_MODE,
-                new SecretKeySpec(K, "AES"),
-                new IvParameterSpec(IV));
+    /** Criptografa 'ml' usando chave 'K' (hex) e grava IV/C/C_PADDED. */
+    public static void encrypt() throws GeneralSecurityException {
+        final String mlString = requireNotBlank(DiffieHellman.get("ml"), "ml");
+        final byte[] key = parseHex(requireNotBlank(DiffieHellman.get("K"), "K"));
+        validateAesKey(key);
 
-        byte[] cipherText = cipher.doFinal(ml);
+        final byte[] iv = randomIv();
+        final byte[] plaintext = mlString.getBytes(StandardCharsets.UTF_8);
 
-        String IVl = Utils.encodeHexString(IV);
-        String cl = Utils.encodeHexString(cipherText);
+        final byte[] ciphertext = doCipher(Cipher.ENCRYPT_MODE, key, iv, plaintext);
+
+        final String ivHex = Utils.encodeHexString(iv);
+        final String cHex  = Utils.encodeHexString(ciphertext);
+
+        // Padrão consistente de nomes
         DiffieHellman.record(
-                new String[] { "IVl", IVl },
-                new String[] { "cl_PADDED", cl },
-                new String[] { "cl", IVl + cl });
+            new String[] {"IV", ivHex},
+            new String[] {"C_PADDED", cHex},
+            new String[] {"C", ivHex + cHex}
+        );
     }
 
-    /**
-     * Decrypt the cipher received from the other person and stores it on the key
-     * files as m
-     * 
-     * @throws NoSuchPaddingException
-     * @throws NoSuchAlgorithmException
-     * @throws InvalidAlgorithmParameterException
-     * @throws InvalidKeyException
-     * @throws BadPaddingException
-     * @throws IllegalBlockSizeException
-     * 
-     * @see FileManager
-     * @see Cipher
-     */
-    public static void decrypt() throws Exception {
-        String cString, kString, ivString;
-        cString = DiffieHellman.get("c_PADDED").replaceAll("\s", "");
-        kString = DiffieHellman.get("K").replaceAll("\s", "");
-        ivString = DiffieHellman.get("IV").replaceAll("\s", "");
+    /** Descriptografa usando 'IV' e 'C_PADDED' (ambos hex) para gerar 'm'. */
+    public static void decrypt() throws GeneralSecurityException {
+        final byte[] c   = parseHex(requireNotBlank(DiffieHellman.get("C_PADDED"), "C_PADDED"));
+        final byte[] key = parseHex(requireNotBlank(DiffieHellman.get("K"), "K"));
+        final byte[] iv  = parseHex(requireNotBlank(DiffieHellman.get("IV"), "IV"));
+        validateAesKey(key);
+        validateIv(iv);
 
-        byte[] c = Utils.hexStringToByteArray(cString);
-        byte[] K = Utils.hexStringToByteArray(kString);
-        byte[] IV = Utils.hexStringToByteArray(ivString);
-
-        Cipher cipher = Cipher.getInstance("AES/CBC/PKCS5Padding");
-        cipher.init(
-                Cipher.DECRYPT_MODE,
-                new SecretKeySpec(K, "AES"),
-                new IvParameterSpec(IV));
-
-        byte[] plainText = null;
         try {
-            plainText = cipher.doFinal(c);
-
-            DiffieHellman.record(
-                    new String[] { "m", new String(plainText, StandardCharsets.UTF_8) });
-        } catch (Exception e) {
-            System.out.println(e.getLocalizedMessage());
+            final byte[] plaintext = doCipher(Cipher.DECRYPT_MODE, key, iv, c);
+            DiffieHellman.record(new String[] {"m", new String(plaintext, StandardCharsets.UTF_8)});
+        } catch (BadPaddingException | IllegalBlockSizeException e) {
+            // BadPadding tipicamente indica chave/IV ou dados incorretos
+            throw new GeneralSecurityException("Falha ao descriptografar: dados ou parâmetros inválidos.", e);
         }
     }
 
-    /**
-     * Records the message line (m') to be sent back to the connection, this method
-     * simply rewrite the message backwards
-     * 
-     * @throws IOException from FileManager, the file could not exist.
-     * 
-     * @see FileManager
-     */
-    public static void backwards() throws IOException {
-        String m = DiffieHellman.get("m");
-        String ml = "";
+    /** Reverte o conteúdo de 'm' e grava como 'ml'. */
+    public static void backwards() {
+        final String m = requireNotBlank(DiffieHellman.get("m"), "m");
+        final String ml = new StringBuilder(m).reverse().toString();
+        DiffieHellman.record(new String[] {"ml", ml});
+    }
 
-        for (char letter : m.toCharArray()) {
-            ml = letter + ml;
+    /* ========================= HELPERS ========================= */
+
+    private static byte[] doCipher(int mode, byte[] key, byte[] iv, byte[] input)
+            throws GeneralSecurityException {
+        final Cipher cipher = Cipher.getInstance(CIPHER);
+        cipher.init(mode, new SecretKeySpec(key, "AES"), new IvParameterSpec(iv));
+        return cipher.doFinal(input);
+    }
+
+    private static byte[] randomIv() {
+        final byte[] iv = new byte[BLOCK_SIZE];
+        new SecureRandom().nextBytes(iv);
+        return iv;
+    }
+
+    private static void validateAesKey(byte[] key) {
+        final int len = key.length;
+        if (len != 16 && len != 24 && len != 32) {
+            throw new IllegalArgumentException("Chave AES inválida: tamanho deve ser 16/24/32 bytes, mas é " + len);
         }
+    }
 
-        DiffieHellman.record(new String[] { "ml", ml });
+    private static void validateIv(byte[] iv) {
+        if (iv.length != BLOCK_SIZE) {
+            throw new IllegalArgumentException("IV inválido: esperado " + BLOCK_SIZE + " bytes, veio " + iv.length);
+        }
+    }
+
+    private static byte[] parseHex(String s) {
+        return Utils.hexStringToByteArray(WS.matcher(Objects.requireNonNull(s)).replaceAll(""));
+    }
+
+    private static String requireNotBlank(String value, String name) {
+        if (value == null || WS.matcher(value).replaceAll("").isEmpty()) {
+            throw new IllegalArgumentException("Valor ausente/inválido para '" + name + "'");
+        }
+        return value;
     }
 }
