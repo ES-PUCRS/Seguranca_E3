@@ -1,45 +1,65 @@
 public class Utils {
 
     /**
-     * Returns a byte array read from the String given as parameter
-     * 
-     * @param s hexadecimal formated string
-     * @return byte array formated from the hexadecimal String parameter
+     * Converts a hexadecimal string to a byte array.
+     *
+     * @param hexString Hexadecimal string (must have even length).
+     * @return Byte array corresponding to the hexadecimal string.
+     * @throws IllegalArgumentException if the input is null, has odd length, or contains invalid characters.
      */
-    public static byte[] hexStringToByteArray(String s) {
-        byte[] data = new byte[s.length() / 2];
-        for (int i = 0; i < s.length(); i += 2) {
-            data[i / 2] = (byte) ((Character.digit(s.charAt(i), 16) << 4)
-                    + Character.digit(s.charAt(i + 1), 16));
+    public static byte[] hexStringToByteArray(String hexString) {
+        if (hexString == null) {
+            throw new IllegalArgumentException("Input string cannot be null");
         }
+        if (hexString.length() % 2 != 0) {
+            throw new IllegalArgumentException("Hex string must have even length");
+        }
+
+        int len = hexString.length();
+        byte[] data = new byte[len / 2];
+
+        for (int i = 0; i < len; i += 2) {
+            int hi = Character.digit(hexString.charAt(i), 16);
+            int lo = Character.digit(hexString.charAt(i + 1), 16);
+            if (hi == -1 || lo == -1) {
+                throw new IllegalArgumentException("Invalid hex digit: " + hexString.substring(i, i + 2));
+            }
+            data[i / 2] = (byte) ((hi << 4) + lo);
+        }
+
         return data;
     }
 
     /**
-     * Returns a String builded from the byte array given
-     * 
-     * @param byteArray byte array to convert to String
-     * @return Hexadecimal String converted from byte array
+     * Converts a byte array to a hexadecimal string.
+     *
+     * @param byteArray The byte array to convert.
+     * @return A hexadecimal string representation of the byte array.
+     * @throws IllegalArgumentException if byteArray is null.
      */
     public static String encodeHexString(byte[] byteArray) {
-        StringBuffer hexStringBuffer = new StringBuffer();
-        for (int i = 0; i < byteArray.length; i++) {
-            hexStringBuffer.append(byteToHex(byteArray[i]));
+        if (byteArray == null) {
+            throw new IllegalArgumentException("Input byte array cannot be null");
         }
-        return hexStringBuffer.toString();
+
+        StringBuilder hexString = new StringBuilder(byteArray.length * 2);
+        for (byte b : byteArray) {
+            hexString.append(byteToHex(b));
+        }
+        return hexString.toString();
     }
 
     /**
-     * Returns converted byte to hexadecimal
-     * 
-     * @param num byte to be converted to hexadecimal
-     * @return String of respective hexadecimal for the given byte
+     * Converts a byte to a 2-character hexadecimal string.
+     *
+     * @param b The byte to convert.
+     * @return A 2-character string representing the byte in hexadecimal (lowercase).
      */
-    public static String byteToHex(byte num) {
-        char[] hexDigits = new char[2];
-        hexDigits[0] = Character.forDigit((num >> 4) & 0xF, 16);
-        hexDigits[1] = Character.forDigit((num & 0xF), 16);
+    public static String byteToHex(byte b) {
+        char[] hexDigits = {
+            Character.forDigit((b >> 4) & 0xF, 16),
+            Character.forDigit(b & 0xF, 16)
+        };
         return new String(hexDigits);
     }
-
 }
